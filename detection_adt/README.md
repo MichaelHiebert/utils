@@ -11,6 +11,8 @@ or
 frame_id, object_label, top_left_x, top_left_y, bottom_right_x, bottom_right_y, confidence
 ```
 
+Here is an example of loading a `Detection` from a csv file:
+
 ```
 from detection import Detection
 
