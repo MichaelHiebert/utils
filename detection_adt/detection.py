@@ -31,8 +31,7 @@ class BoundingBox():
         self.width = self.brx - self.tlx
         self.height = self.bry - self.tly
         
-        if confidence != None:
-            self.confidence = confidence
+        self.confidence = confidence
 
     def related_to(self, other_bounding_box):
         """
@@ -323,8 +322,15 @@ class Detection():
         else:
             raise RuntimeError('Unable to process BoundingBox arguments!')
 
-    def metrics(self):
+    def metrics(self, confidence_threshold=0.5, iou_threshold=0.5):
         """
+            Parameters
+            ----------
+            confidence_threshold : float ::
+                the threshold under which predicted bounding boxes will be filtered out, as if they were not predicted at all
+            iou_threshold : float ::
+                the threshold for overlapping bounding boxes to determine a valid match
+
             Returns
             -------
             a tuple of floats for precision,recall,fscore
@@ -353,10 +359,11 @@ class Detection():
             t_pos = []
             
             for pred in preds:
-                matches = pred.matches(labels)
-                t_pos.append(True in matches)
+                if pred.confidence == None or pred.confidence >= confidence_threshold:
+                    matches = pred.matches(labels, threshold=iou_threshold)
+                    t_pos.append(True in matches)
 
-                f_neg = [f_n or matches[i] for i,f_n in enumerate(f_neg)]
+                    f_neg = [f_n or matches[i] for i,f_n in enumerate(f_neg)]
             
             for item in f_neg:
                 if item == False: false_neg += 1
@@ -364,6 +371,9 @@ class Detection():
             for item in t_pos:
                 if item == True: true_pos += 1
                 else: false_pos += 1
+
+        if true_pos == 0.0: # we made no good predictions. sad!
+            return 0.0,0.0,0.0
 
         precision = true_pos / (true_pos + false_pos)
         recall = true_pos / (true_pos + false_neg)

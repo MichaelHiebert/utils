@@ -156,6 +156,32 @@ class TestDetection(unittest.TestCase):
         self.assertEqual(pr, 1.0 / 3.0)
         self.assertEqual(re, 1.0 / 3.0)
 
+    def test_metrics_bad_confidence(self):
+        # [2 2 10 20; 80 80 30 40]
+        true1 = BoundingBox(1, 'A', (2,2), (12,22))
+        true2 = BoundingBox(1, 'A', (80,80), (110,120))
+
+        labels = [true1, true2]
+
+        # [4 4 10 20; 50 50 30 10; 90 90 40 50];
+        pred1 = BoundingBox(1, 'A', (4,4), (14,24), confidence=0.1)
+        pred2 = BoundingBox(1, 'A', (50,50), (80,60), confidence=0.1)
+        pred3 = BoundingBox(1, 'A', (80,80), (110,120), confidence=0.1)
+
+        predictions = [pred1, pred2, pred3]
+
+        det = Detection(labels=labels, predictions=predictions)
+
+        pr,re,_ = det.metrics()
+
+        self.assertEqual(pr, 0.0)
+        self.assertEqual(re, 0.0)
+
+        pr,re,_ = det.metrics(confidence_threshold=0.1)
+
+        self.assertEqual(pr, 2.0 / 3.0)
+        self.assertEqual(re, 1.000)
+
 
 
 if __name__ == '__main__':
