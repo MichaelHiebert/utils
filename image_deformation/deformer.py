@@ -132,7 +132,7 @@ class ImageDeformer():
 
         return options[choice](image)
 
-def deform_directory(in_dir, out_dir):
+def deform_directory(in_dir, out_dir, label_dir=1,):
     """
         TODO
     """
@@ -150,7 +150,7 @@ def deform_directory(in_dir, out_dir):
             if name[-4:] == '.jpg': # is an image
                 def_im = imdef.random_deform(cv2.imread(os.path.join(root, name)))
 
-                fold = root.split('/')[1]
+                fold = root.split('/')[label_dir]
 
                 try:
                     os.mkdir('{}/{}'.format(out_dir,fold))
@@ -164,4 +164,4 @@ if __name__ == "__main__":
 
     # pic = cv2.imread('data/0000045/009.jpg')
     # cv2.imwrite('test.png', imdef.random_deform(pic))
-    deform_directory('data', 'deformed')
+    deform_directory('data', 'deformed', label_dir=2)

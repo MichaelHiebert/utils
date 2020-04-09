@@ -135,6 +135,27 @@ class TestDetection(unittest.TestCase):
         self.assertEqual(pr, 1.0 / 3.0)
         self.assertEqual(re, 1.0 / 3.0)
 
+    def test_precision_bad_predicts_stream(self):
+        det = Detection()
+
+        det.add_label(BoundingBox(1, 'A', (2,2), (12,22)))
+        det.add_label(1, 'A', 80, 80, 110, 120)
+        det.add_label(BoundingBox(1, 'A', (20,20),(30,30)))
+
+        # [4 4 10 20; 50 50 30 10; 90 90 40 50];
+        pred1 = BoundingBox(1, 'A', (4,4), (14,24))
+        pred2 = BoundingBox(1, 'A', (50,50), (80,60))
+        pred3 = BoundingBox(1, 'B', (80,80), (110,120))
+
+        det.add_prediction(BoundingBox(1, 'A', (4,4), (14,24)))
+        det.add_prediction(1, 'A', 50, 50, 80, 60)
+        det.add_prediction(1, 'B', 80,80, 110,120)
+
+        pr,re,_ = det.metrics()
+
+        self.assertEqual(pr, 1.0 / 3.0)
+        self.assertEqual(re, 1.0 / 3.0)
+
 
 
 if __name__ == '__main__':

@@ -166,8 +166,14 @@ class Detection():
 
         if labels != None:
             self.labels = self._handle_new_bounding_boxes(labels)
+        else:
+            self.labels = None
+
         if predictions != None:
             self.predictions = self._handle_new_bounding_boxes(predictions)
+        else:
+            self.predictions = None
+
         if frames != None:
             pass # TODO
 
@@ -260,6 +266,62 @@ class Detection():
                 dict_to_ret[frame_id] = [BoundingBox(frame_id, label, (tlx,tly), (brx,bry), confidence=confidence)]
                     
         return dict_to_ret
+
+    def add_label(self, *args):
+        """
+            Add a prediction of the form BoundingBox or
+
+            `frame_id, object_label, top_left_x, top_left_y, bottom_right_x, bottom_right_y(, confidence)`
+
+            where confidence is optional
+        """
+        try:
+            if self.labels == None: self.labels = dict()
+
+            self._add_bounding_box(args, self.labels)
+        except Exception as e:
+            self.labels = None
+            raise e
+
+    def add_prediction(self, *args):
+        """
+            Add a prediction of the form BoundingBox or
+
+            `frame_id, object_label, top_left_x, top_left_y, bottom_right_x, bottom_right_y{, confidence}` or
+
+            `frame_id, object_label, (top_left_x, top_left_y), (bottom_right_x, bottom_right_y){, confidence}`
+
+            where confidence is optional
+        """
+        try:
+            if self.predictions == None: self.predictions = dict()
+            self._add_bounding_box(args, self.predictions)
+        except Exception as e:
+            self.predictions = None
+            raise e
+    
+    def _add_bounding_box(self, bb_args, bb_dict):
+        """Add a bounding box to the specified label/predictions dict"""
+        bb = self._handle_bb_args(bb_args)
+
+        if bb.frame_id not in bb_dict:
+            bb_dict[bb.frame_id] = [bb]
+        else:
+            bb_dict[bb.frame_id].append(bb)
+
+    def _handle_bb_args(self, args):
+        """Convert the arglist in any format to a BoundingBox and return it"""
+        if len(args) == 1: # BoundingBox
+            if type(args[0]) == BoundingBox:
+                return args[0]
+        elif len(args) in [4,5]: # frame_id, object_label, top_left, bottom_right(, confidence)
+            return BoundingBox(*args)
+        elif len(args) == 6:
+            return BoundingBox(*args[:2], (args[2], args[3]), (args[4], args[5]))
+        elif len(args) == 7:
+            return BoundingBox(*args[:2], (args[2], args[3]), (args[4], args[5]), args[6])
+        else:
+            raise RuntimeError('Unable to process BoundingBox arguments!')
 
     def metrics(self):
         """
