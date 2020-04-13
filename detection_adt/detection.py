@@ -1,4 +1,6 @@
 from collections import defaultdict
+import numpy as np
+import random
 
 class BoundingBox():
     """
@@ -381,12 +383,205 @@ class Detection():
 
         return precision,recall,fscore
 
+    def load_labels_from_annot_dict(self, annot_dict):
+        """
+            Only for use with annotation dict of form:
+            {
+            'frame_id': {
+                'label': [
+                    (x,y,w,h)
+                    ]
+                }
+            }
+        """
 
+        internal_dict = dict()
+
+        for frame in annot_dict:
+            if frame not in internal_dict:
+                internal_dict[frame] = []
+
+            for label in annot_dict[frame]:
+                for box in annot_dict[frame][label]:
+                    x,y,w,h = box
+
+                    tlx = x
+                    tly = y
+                    brx = x + w
+                    bry = y + h
+
+                    bb = BoundingBox(frame, label, (tlx,tly), (brx,bry))
+
+                    internal_dict[frame].append(bb)
+
+        self.labels = internal_dict
+
+    def labels_to_annot_dict(self):
+        annot_dict = dict()
+
+        for frame in self.labels:
+
+            if frame not in annot_dict:
+                annot_dict[frame] = dict()
+
+            for bb in self.labels[frame]:
+                if bb.label not in annot_dict[frame]:
+                    annot_dict[frame][bb.label] = []
+
+                val = bb.tlx, bb.tly, bb.brx - bb.tlx, bb.bry - bb.tly
+                annot_dict[frame][bb.label].append(val)
+
+        return annot_dict
+
+    def add_disjoint_boxes(self, num_boxes_to_add, label, max_width, max_height, verbose=False):
+        for frame in self.labels:
+            bba = BoundingBoxArray(self.labels[frame], max_width=max_width, max_height=max_height)
+            to_add = bba.add_disjoint_boxes(num_boxes_to_add, label=label)
+            bb_to_add = [BoundingBox(frame, label, tl, br) for tl,br in to_add]
+
+            for bb in bb_to_add:
+                if verbose: print('Added new bounding box of label {} to frame {} with coords {} and {}'.format(label, frame, bb.top_left, bb.bottom_right))
+                self.labels[frame].append(bb)
+
+class BoundingBoxArray():
+    """A two-dimensional array of bounding boxes."""
+
+    def __init__(self, bounding_box_list, max_width=None, max_height=None):
+        self.list = bounding_box_list
+        
+        if max_width == None:
+            self.width = int(max([bb.brx for bb in bounding_box_list]))
+        else:
+            self.width = max_width
+
+        if max_height == None:
+            self.height = int(max([bb.bry for bb in bounding_box_list]))
+        else:
+            self.height = max_height
+
+        if self.width <= 1 or self.height <= 1:
+            self.width = int(self.width * 1000)
+            self.height = int(self.height * 1000)
+            self.normalized = True
+        else:
+            self.normalized = False
+        
+        self.array = np.zeros((self.height,self.width))
+
+        for bb in bounding_box_list:
+            self._add_bounding_box_to_array(bb)
+    
+    def _add_bounding_box_to_array(self, bb):
+        tlx,tly = bb.top_left
+        brx,bry = bb.bottom_right
+
+        if self.normalized:
+            tlx = int(tlx * 1000)
+            tly = int(tly * 1000)
+            brx = int(brx * 1000)
+            bry = int(bry * 1000)
+
+        self.array[tly:bry, tlx:brx] = 1
+
+    def _add_disjoint_bounding_box(self, label='background', min_size=(10,10), decay=0, tries=10):
+        """
+            Tries to add a new non-overlapping bounding box. Returns True if successful, False if not.
+        """
+
+        if tries == 0: return False
+
+        tlx = random.randint(0,self.width - 1)
+        tly = random.randint(0,self.height - 1)
+
+        # pick a random start point
+        while self.array[tly,tlx] != 0:
+            tlx = random.randint(0,self.width - 1)
+            tly = random.randint(0,self.height - 1)
+
+        should_grow = True
+
+        cur_width = 0
+        cur_height = 0
+
+        cur_x = tlx
+        cur_y = tly
+
+        while should_grow and cur_x < self.width - 1 and cur_y < self.height - 1:
+            if cur_width < min_size[0] and cur_height < min_size[1]:
+                if random.randint(0,1) == 0:
+                    if 1 in self.array[tly:cur_y,cur_x + 1]: # collision
+                        return self._add_disjoint_bounding_box(label=label, min_size=min_size, decay=decay, tries=tries-1) # try again
+                    else:
+                        cur_x += 1
+                        cur_width += 1
+                else:
+                    if 1 in self.array[cur_y + 1,tlx:cur_x]: # collision
+                        return self._add_disjoint_bounding_box(label=label, min_size=min_size, decay=decay, tries=tries-1) # try again
+                    else:
+                        cur_y += 1
+                        cur_height += 1
+            elif cur_width < min_size[0]: # subminimal width
+                if 1 in self.array[tly:cur_y,cur_x + 1]: # collision
+                        return self._add_disjoint_bounding_box(label=label, min_size=min_size, decay=decay, tries=tries-1) # try again
+                else:
+                    cur_x += 1
+                    cur_width += 1
+            elif cur_height < min_size[1]: # subminimal height
+                if 1 in self.array[cur_y + 1,tlx:cur_x]: # collision
+                    return self._add_disjoint_bounding_box(label=label, min_size=min_size, decay=decay, tries=tries-1) # try again
+                else:
+                    cur_y += 1
+                    cur_height += 1
+            else: # above minimum thresholds
+                while random.randint(0,1000) > decay and cur_x < self.width - 1 and cur_y < self.height - 1:
+
+                    # randomly expand
+                    if random.randint(0,1) == 0:
+                        if 1 in self.array[tly:cur_y,cur_x + 1]: # collision
+                            self.array[tly:cur_y, tlx:cur_x] = 2
+                            return (tlx,tly),(cur_x,cur_y)
+                        else:
+                            cur_x += 1
+                            cur_width += 1
+                    else:
+                        if 1 in self.array[cur_y + 1,tlx:cur_x]: # collision
+                            self.array[tly:cur_y, tlx:cur_x] = 2
+                            return (tlx,tly),(cur_x,cur_y)
+                        else:
+                            cur_y += 1
+                            cur_height += 1
                     
+                    decay += 25
+
+                self.array[tly:cur_y, tlx:cur_x] = 2
+                return (tlx,tly),(cur_x,cur_y)
+
+        return self._add_disjoint_bounding_box(label=label, min_size=min_size, decay=decay, tries=tries-1) # try again
+    
+    def add_disjoint_boxes(self, num_boxes, label='background', min_width=10, min_height=10, tries=10):
+        added = []
+        for i in range(num_boxes):
+            res = self._add_disjoint_bounding_box(label=label, min_size=(min_width,min_height), tries=tries)
 
 
+            if res != False:
+                if self.normalized:
+                    tl,br = res
+                    tl = tl[0] / 1000, tl[1] / 1000
+                    br = br[0] / 1000, br[1] / 1000
+                    res = tl,br
+                added.append(res)
+        
+        return added
 
+if __name__ == "__main__":
+    a = BoundingBox('','',(0,0), (5,5))
+    b = BoundingBox('','',(5,5), (10,10))
+    c = BoundingBox('','',(15,15), (20,20))
 
+    np.set_printoptions(threshold=np.inf)
 
-
-            
+    bba = BoundingBoxArray([a,b,c], max_width=20, max_height=20)
+    res = bba.add_disjoint_boxes(5,min_size=5)
+    print(res)
+    print(bba.array)
